@@ -1,14 +1,11 @@
-# Copilot SDK (Python) — confirm exact package name during implementation.
-# Public preview at time of writing; check
-# https://github.com/github/copilot-sdk/tree/main/python for the current name.
-copilot-sdk>=0.1.0
+# GitHub Copilot SDK for Python (public preview, not yet on PyPI).
+# The `[telemetry]` extra installs opentelemetry-api which the SDK uses
+# for trace-context propagation between the CLI subprocess and your code.
+# See https://github.com/github/copilot-sdk/tree/main/python
+copilot-sdk[telemetry] @ git+https://github.com/github/copilot-sdk.git#subdirectory=python
 
-# Azure Monitor OpenTelemetry distro — single-line OTel setup that exports
-# to Application Insights.
-azure-monitor-opentelemetry>=1.6.0
-
-# OpenTelemetry API (for trace-context propagation inside tool handlers).
-opentelemetry-api>=1.27.0
+# Pydantic models for the @define_tool decorator's JSON schema generation.
+pydantic>=2.7.0
 
 # Azure AI Search client (used by retrieve_docs and seed_index.py).
 azure-search-documents>=11.5.0
@@ -21,3 +18,4 @@ azure-identity>=1.18.0
 
 # Reading .env produced by `azd env get-values`.
 python-dotenv>=1.0.0
+

@@ -1,129 +1,162 @@
 """
 Copilot SDK RAG demo agent for "Northwind Bank".
 
-This file is a structured scaffold — the coding session will finalise the
-TODO blocks once we confirm the exact Copilot SDK Python API surface
-against https://github.com/github/copilot-sdk.
+Telemetry architecture
+----------------------
+The Copilot SDK starts the Copilot CLI as a subprocess and talks to it over
+JSON-RPC. **All GenAI OpenTelemetry spans (agent runs, LLM calls, tool
+executions) are emitted by the CLI subprocess via OTLP HTTP** — not by this
+Python process.
 
-Flow at runtime:
+To get those spans into Application Insights, we run a small OpenTelemetry
+Collector (see `otel-collector-config.yaml` and `docker-compose.yaml`) that:
+  1. Receives OTLP HTTP on port 4318.
+  2. Exports to Application Insights via the `azuremonitor` exporter.
 
-    1.  configure_azure_monitor() wires the global OTel SDK to export
-        spans + logs + metrics to Application Insights via the connection
-        string in APPLICATIONINSIGHTS_CONNECTION_STRING.
+Start it with:
 
-    2.  CopilotClient is created with TelemetryConfig so that the SDK
-        emits OTel spans for agent runs, LLM calls, and tool execution
-        following the OTel GenAI semantic conventions.
+    docker compose up -d otel-collector
 
-    3.  A single tool, retrieve_docs(query), is registered. It calls
-        Azure AI Search and returns the top-3 chunks from the
-        northwind-kb index. Inside the tool handler we restore the
-        CLI's W3C trace context so the Search HTTP call shows up as a
-        child span under `execute_tool`.
-
-    4.  run_demo() loads the 5 scripted prompts from prompts.json and
-        sends each one in a fresh conversation so the Foundry
-        evaluation in phase 5 has 5 distinct rows to score.
+…then run this script. Trace-context is automatically propagated from the
+CLI down into the tool handler below (the Python SDK restores it via the
+opentelemetry-api), so any spans you create inside the handler will be
+children of the `execute_tool` span.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import uuid
 from pathlib import Path
 
-from azure.monitor.opentelemetry import configure_azure_monitor
 from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
-# TODO(coding-session): import the Copilot SDK Python client + TelemetryConfig.
-# Likely shape based on the TypeScript docs:
-#
-#     from copilot_sdk import CopilotClient, TelemetryConfig
-#
-# from copilot_sdk import CopilotClient, TelemetryConfig
+from copilot import CopilotClient, SubprocessConfig, define_tool
+from copilot.generated.session_events import (
+    AssistantMessageData,
+    SessionIdleData,
+)
+from copilot.session import PermissionHandler
 
 
 SOURCE_NAME = "rag-demo-agent"
 TOP_K = 3
+MODEL = "gpt-5"  # Use the Copilot-hosted model; swap to "gpt-4o" etc. if preferred.
 
 
-def _bootstrap_otel() -> None:
-    """Send all OTel spans/logs/metrics to Application Insights."""
-    conn = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
-    if not conn:
-        raise SystemExit(
-            "APPLICATIONINSIGHTS_CONNECTION_STRING is not set. "
-            "Run `azd env get-values > .env` after `azd up`."
-        )
-    configure_azure_monitor(connection_string=conn)
+# ---------------------------------------------------------------------------
+# Tool: retrieve_docs
+# ---------------------------------------------------------------------------
+
+class RetrieveDocsParams(BaseModel):
+    query: str = Field(description="Natural-language search query for the Northwind Bank knowledge base.")
 
 
-def _make_search_client() -> SearchClient:
+@define_tool(
+    description=(
+        "Retrieve the top relevant Northwind Bank policy snippets for the user's "
+        "question. Use this before answering any question about Northwind products, "
+        "fees, rates, or policies."
+    ),
+    skip_permission=True,
+)
+async def retrieve_docs(params: RetrieveDocsParams) -> str:
+    """Returns the top-K chunks from Azure AI Search as a single string.
+
+    The Copilot SDK auto-restores the CLI's trace context around this
+    handler, so any spans we'd start here (or that the SearchClient HTTP
+    library emits, if it's instrumented) will appear as children of the
+    `execute_tool` span in App Insights / Foundry Tracing.
+    """
     endpoint = os.environ["AZURE_AI_SEARCH_ENDPOINT"]
     index = os.environ.get("AZURE_AI_SEARCH_INDEX", "northwind-kb")
-    return SearchClient(
+    search = SearchClient(
         endpoint=endpoint,
         index_name=index,
         credential=DefaultAzureCredential(),
     )
+    results = list(search.search(search_text=params.query, top=TOP_K))
+    if not results:
+        return "No matching Northwind Bank documents were found."
+    return "\n\n---\n\n".join(
+        f"[{hit.get('source', 'unknown')}]\n{hit['content']}" for hit in results
+    )
 
 
-def retrieve_docs(query: str) -> list[str]:
-    """Tool body: top-K chunks from Azure AI Search."""
-    client = _make_search_client()
-    results = client.search(search_text=query, top=TOP_K)
-    return [hit["content"] for hit in results]
-
+# ---------------------------------------------------------------------------
+# Demo runner
+# ---------------------------------------------------------------------------
 
 def _load_prompts() -> list[dict]:
-    here = Path(__file__).resolve().parent
-    return json.loads((here / "prompts.json").read_text(encoding="utf-8"))
+    return json.loads((Path(__file__).parent / "prompts.json").read_text(encoding="utf-8"))
 
 
-def run_demo() -> None:
-    """Fire the 5 scripted Northwind Bank prompts, one per conversation."""
+def _telemetry_config() -> dict:
+    """Telemetry config for the CLI subprocess.
+
+    The CLI emits OTLP HTTP traces to this endpoint. The OTel Collector
+    (docker compose service `otel-collector`) listens here and forwards
+    to Application Insights using the Azure Monitor exporter.
+    """
+    return {
+        "otlp_endpoint": os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
+        "exporter_type": "otlp-http",
+        "source_name": SOURCE_NAME,
+        "capture_content": True,
+    }
+
+
+async def _run_one(client: CopilotClient, prompt: dict) -> None:
+    conversation_id = f"demo-{prompt['id']}-{uuid.uuid4().hex[:8]}"
+    print(f"\n=== {prompt['id']}  (conv: {conversation_id}) ===")
+    print(f"User: {prompt['user_message']}")
+
+    async with await client.create_session(
+        on_permission_request=PermissionHandler.approve_all,
+        model=MODEL,
+        tools=[retrieve_docs],
+        session_id=conversation_id,
+    ) as session:
+        done = asyncio.Event()
+        answer_chunks: list[str] = []
+
+        def on_event(event):  # noqa: ANN001 - SDK callback type
+            match event.data:
+                case AssistantMessageData() as data:
+                    answer_chunks.append(data.content)
+                case SessionIdleData():
+                    done.set()
+
+        session.on(on_event)
+        await session.send(prompt["user_message"])
+        await done.wait()
+
+    print("Agent:", "".join(answer_chunks).strip())
+
+
+async def run_demo() -> None:
     prompts = _load_prompts()
-
-    # TODO(coding-session): construct the CopilotClient with telemetry, e.g.:
-    #
-    #   client = CopilotClient(
-    #       telemetry=TelemetryConfig(
-    #           exporter_type="otlp-http",          # or default in-proc
-    #           source_name=SOURCE_NAME,
-    #           capture_content=True,               # populate gen_ai.input/output.messages
-    #       ),
-    #   )
-    #
-    # Then for each prompt:
-    #
-    #   1. Start a new session (gives a fresh gen_ai.conversation.id).
-    #   2. Register the `retrieve_docs` tool on the session. In the handler,
-    #      restore the CLI's trace context using
-    #      opentelemetry.propagation.extract({"traceparent": invocation.traceparent,
-    #                                         "tracestate": invocation.tracestate})
-    #      then create a child span around the SearchClient.search call so it
-    #      appears under `execute_tool` in the Foundry trace tree.
-    #   3. session.send(prompt["user_message"]) and stream/collect the answer.
-    #   4. Print the answer + conversation id for the demo narration.
-    #
-    # for prompt in prompts:
-    #     ...
-
-    for prompt in prompts:
-        print(f"[{prompt['id']}]  {prompt['user_message']}")
-    print(
-        "\n(scaffold) — the coding session will replace this loop with "
-        "real CopilotClient.session.send(...) calls once the Python SDK "
-        "API is confirmed."
-    )
+    config = SubprocessConfig(telemetry=_telemetry_config())
+    async with CopilotClient(config) as client:
+        for prompt in prompts:
+            await _run_one(client, prompt)
 
 
 def main() -> None:
     load_dotenv()
-    _bootstrap_otel()
-    run_demo()
+    required = ["AZURE_AI_SEARCH_ENDPOINT"]
+    missing = [k for k in required if not os.environ.get(k)]
+    if missing:
+        raise SystemExit(
+            f"Missing required env vars: {', '.join(missing)}. "
+            "Run `azd env get-values > .env` after `azd up`."
+        )
+    asyncio.run(run_demo())
 
 
 if __name__ == "__main__":

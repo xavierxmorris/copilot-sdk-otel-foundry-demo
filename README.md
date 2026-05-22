@@ -23,12 +23,16 @@ The whole demo is designed to be talked through in ~10–15 minutes.
 
 ```mermaid
 flowchart LR
-    A["Python app<br/>Copilot SDK<br/>RAG agent"] -- "OTel / OTLP<br/>(in-proc exporter)" --> B["Application Insights<br/>requests · dependencies<br/>traces · customEvents"]
-    B -- "linked resource" --> C["Azure AI Foundry project<br/>Tracing tab"]
-    C -- "Evaluation target = Traces<br/>Groundedness · Relevance · Coherence" --> B
-    A -- "retrieve_docs tool" --> D["Azure AI Search<br/>northwind-kb index"]
-    A -- "chat / embeddings" --> E["Azure OpenAI<br/>gpt-4o-mini · text-embedding-3-small"]
+    A["Python app<br/>copilot-sdk[telemetry]"] -- "spawns" --> B["Copilot CLI<br/>(subprocess)"]
+    B -- "OTLP HTTP :4318<br/>(agent · LLM · tool spans)" --> C["OTel Collector<br/>(docker-compose)"]
+    C -- "azuremonitor exporter" --> D["Application Insights<br/>requests · dependencies<br/>traces · customEvents"]
+    D -- "linked resource" --> E["Azure AI Foundry project<br/>Tracing tab"]
+    E -- "Evaluation target = Traces<br/>Groundedness · Relevance · Coherence" --> D
+    A -- "retrieve_docs tool" --> F["Azure AI Search<br/>northwind-kb index"]
+    A -- "embeddings (seed_index.py)" --> G["Azure OpenAI<br/>gpt-5 / text-embedding-3-small"]
 ```
+
+> Why a collector? The Copilot SDK CLI subprocess emits OTLP directly — it is not a Python in-proc exporter. The collector receives that OTLP traffic and ships it to App Insights via the `azuremonitor` contrib exporter. The same pattern is recommended in the official Copilot SDK observability docs.
 
 ## Prerequisites
 
@@ -37,6 +41,7 @@ flowchart LR
 - [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) (`azd`) ≥ 1.10.
 - [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) ≥ 2.60.
 - Python ≥ 3.11.
+- **Docker** (Desktop on Windows/macOS, engine on Linux) — used to run the OTel Collector.
 - **Owner**, or **Contributor + User Access Administrator**, on the subscription
   (needed for the RBAC role assignments in [`infra/modules/rbac.bicep`](infra/modules/rbac.bicep)).
 
@@ -56,14 +61,23 @@ azd up
 
 # 3. Export environment for the Python app and seed the search index
 azd env get-values > .env
-python -m venv .venv && . .venv/Scripts/Activate.ps1
+python -m venv .venv && . .venv/Scripts/Activate.ps1  # Linux/macOS: . .venv/bin/activate
+# The Copilot SDK for Python is not yet on PyPI — pip installs it from GitHub.
+# Requires the Copilot CLI to already be installed on your PATH; see
+# https://github.com/github/copilot-sdk for instructions.
 pip install -r app/requirements.txt
 python app/seed_index.py
 
-# 4. Run the demo (5 scripted prompts)
+# 4. Start the OTel Collector (forwards CLI OTLP -> App Insights)
+#    Loads APPLICATIONINSIGHTS_CONNECTION_STRING from .env automatically.
+docker compose --env-file .env up -d otel-collector
+docker compose logs -f otel-collector   # optional — watch traces flow
+
+# 5. Run the demo (5 scripted prompts, each in its own session)
 python app/app.py
 
-# 5. (Optional) Tear everything down after the demo
+# 6. (Optional) Tear everything down after the demo
+docker compose down
 azd down --purge
 ```
 

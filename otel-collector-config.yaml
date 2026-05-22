@@ -1,0 +1,57 @@
+# -----------------------------------------------------------------------------
+# OpenTelemetry Collector config for the Copilot SDK -> App Insights demo.
+#
+# The Copilot SDK CLI subprocess emits OTLP HTTP traces (agent runs, LLM
+# calls, tool executions) to localhost:4318. This collector receives them
+# and forwards to the Application Insights resource that backs the Azure
+# AI Foundry project, using the `azuremonitor` exporter.
+#
+# Run with the bundled docker-compose:  docker compose up -d otel-collector
+# Image: otel/opentelemetry-collector-contrib (contrib variant required
+#        because azuremonitor is a contrib exporter).
+# -----------------------------------------------------------------------------
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    send_batch_size: 100
+    timeout: 5s
+  # Tag every span with the agent name so the foundry-agent KQL templates
+  # (which filter on gen_ai.agent.name) light up correctly even if the SDK
+  # version in use does not set it for every span type.
+  resource:
+    attributes:
+      - key: service.name
+        value: rag-demo-agent
+        action: upsert
+      - key: gen_ai.agent.name
+        value: rag-demo-agent
+        action: upsert
+
+exporters:
+  azuremonitor:
+    connection_string: ${env:APPLICATIONINSIGHTS_CONNECTION_STRING}
+  # Useful for local debugging — uncomment to also dump spans to the collector log.
+  # debug:
+  #   verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [azuremonitor]
+    logs:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [azuremonitor]
+  telemetry:
+    logs:
+      level: info

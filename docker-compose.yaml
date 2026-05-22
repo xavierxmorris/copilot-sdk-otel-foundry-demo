@@ -1,0 +1,22 @@
+# Run the OpenTelemetry Collector that forwards Copilot SDK CLI traces
+# (OTLP HTTP on 4318) into Application Insights.
+#
+#   docker compose up -d otel-collector
+#   docker compose logs -f otel-collector
+#
+# Requires APPLICATIONINSIGHTS_CONNECTION_STRING in your environment (the
+# .env file produced by `azd env get-values` will satisfy this).
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.0
+    container_name: copilot-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    environment:
+      APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING}
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP

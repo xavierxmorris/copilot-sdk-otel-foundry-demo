@@ -22,17 +22,33 @@ az account set --subscription 51eb709f-8958-49c4-a547-ebdbd4bf66dc
 
 azd env new copilot-otel-demo
 azd env set AZURE_LOCATION eastus2
-azd up                          # ~10–15 min the first time
+azd up                              # ~10–15 min the first time
 azd env get-values > .env
 pip install -r app/requirements.txt
-python app/seed_index.py        # uploads the 5 Northwind docs to Search
+python app/seed_index.py            # uploads the 5 Northwind docs to Search
+
+# Manual post-deploy step (until the App Insights connection is in Bicep):
+# In the Foundry portal, open the project -> Tracing -> "Connect Application Insights"
+# and select the appi-... resource in the same resource group.
 ```
 
 > Talking point: everything in `infra/` is one `azd up`. Foundry, App Insights,
 > AOAI, Search, RBAC. Linking App Insights to the Foundry project is what makes
-> the Tracing tab populate in step 3.
+> the Tracing tab populate in step 4.
 
-## Step 1 — Run the agent (live)
+## Step 1 — Start the OTel Collector
+
+The Copilot SDK CLI emits OTLP, not direct App Insights. The collector bridges them.
+
+```bash
+docker compose --env-file .env up -d otel-collector
+docker compose logs -f otel-collector   # optional second pane during the demo
+```
+
+> Talking point: this is a vanilla OTel Collector with the `azuremonitor`
+> contrib exporter. Same shape you'd run in production.
+
+## Step 2 — Run the agent (live)
 
 ```bash
 python app/app.py
@@ -47,10 +63,10 @@ You'll see 5 prompts execute, one per fresh conversation:
 5. **2027 Q3 profit (ungrounded — the punchline)**
 
 > Talking point: nothing about this code looks "observability-aware" beyond
-> `configure_azure_monitor(...)` and `TelemetryConfig(...)`. The Copilot SDK
+> a small `telemetry={...}` dict on `SubprocessConfig`. The Copilot SDK
 > emits the spans for free following the OTel GenAI semconv.
 
-## Step 2 — Verify traces in Application Insights
+## Step 3 — Verify traces in Application Insights
 
 In the App Insights **Logs** blade, paste the queries from
 [`docs/kql-queries.md`](./kql-queries.md):
@@ -66,7 +82,7 @@ In the App Insights **Logs** blade, paste the queries from
 > - `traces` rows carry the input/output messages because we set
 >   `capture_content=True`.
 
-## Step 3 — Foundry Tracing tab
+## Step 4 — Foundry Tracing tab
 
 Switch to the Foundry portal → project → **Tracing**.
 
@@ -84,7 +100,7 @@ Click the `invoke_agent` span and show the **Input** and **Output** message tabs
 > Talking point: this is exactly the same App Insights data you just queried,
 > rendered as a trace tree. No second pipeline, no second store.
 
-## Step 4 — Run Foundry evaluation against the traces
+## Step 5 — Run Foundry evaluation against the traces
 
 In Foundry: **Evaluation → New evaluation**.
 
@@ -109,9 +125,10 @@ When it finishes, run the **eval-results KQL** in
 > Same loop you'd run nightly across all production traffic with custom
 > evaluators on top.
 
-## Step 5 — Teardown
+## Step 6 — Teardown
 
 ```bash
+docker compose down
 azd down --purge
 ```
 
