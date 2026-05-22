@@ -1,0 +1,13 @@
+name: copilot-sdk-otel-foundry-demo
+metadata:
+  template: copilot-sdk-otel-foundry-demo@0.1.0
+
+# No services block: this demo provisions infra only with azd, and the
+# Python app runs locally against the provisioned resources. Running
+# `azd up` will execute the Bicep in `infra/` and write outputs to the
+# azd environment, which the app loads at startup.
+
+infra:
+  provider: bicep
+  path: infra
+  module: main

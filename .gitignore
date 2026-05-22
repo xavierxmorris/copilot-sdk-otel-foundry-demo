@@ -216,3 +216,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# azd
+.azure/
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Editors
+.vscode/
+.idea/
+
+# Logs
+*.log
+

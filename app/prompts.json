@@ -1,0 +1,33 @@
+[
+  {
+    "id": "p1-personal-loan-income",
+    "user_message": "What's Northwind Bank's minimum income requirement for a personal loan?",
+    "intent": "grounded",
+    "expected_topic": "personal-loans.md"
+  },
+  {
+    "id": "p2-credit-card-dispute-window",
+    "user_message": "How long do I have to dispute a credit card transaction at Northwind?",
+    "intent": "grounded",
+    "expected_topic": "credit-cards.md"
+  },
+  {
+    "id": "p3-term-deposit-12mo",
+    "user_message": "What's the current 12-month term deposit rate at Northwind, and what's the minimum to open one?",
+    "intent": "grounded",
+    "expected_topic": "savings-term-deposits.md"
+  },
+  {
+    "id": "p4-emergency-fund-synthesis",
+    "user_message": "Compare Northwind's High-Interest Saver and Term Deposits. Which is better for an emergency fund, and why?",
+    "intent": "partial-synthesis",
+    "expected_topic": "savings-term-deposits.md"
+  },
+  {
+    "id": "p5-ungrounded-2027-profit",
+    "user_message": "What was Northwind Bank's 2027 Q3 profit?",
+    "intent": "ungrounded",
+    "expected_topic": null,
+    "note": "Demo punchline: no doc covers this; Foundry's Groundedness evaluator should fail this row."
+  }
+]
