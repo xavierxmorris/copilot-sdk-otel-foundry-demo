@@ -38,10 +38,17 @@ flowchart LR
 
 - An Azure subscription with quota for `gpt-4o-mini` and `text-embedding-3-small` in `eastus2`
   (fallback: `swedencentral`).
+- Azure AI Search **Basic** capacity in any region near you. The Bicep defaults the
+  Search service to `westus3` because Basic capacity in `eastus2` is currently
+  exhausted (and several other East-US regions are unreachable from some
+  corporate VPN egress paths). Override with `azd env set SEARCH_LOCATION ...`
+  before `azd up` if you want a different region.
 - [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) (`azd`) ≥ 1.10.
 - [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) ≥ 2.60.
 - Python ≥ 3.11.
 - **Docker** (Desktop on Windows/macOS, engine on Linux) — used to run the OTel Collector.
+- The **GitHub Copilot CLI** (`copilot`) installed on `PATH` and signed in.
+  The Python SDK spawns it as a subprocess to make LLM calls and emit OTel spans.
 - **Owner**, or **Contributor + User Access Administrator**, on the subscription
   (needed for the RBAC role assignments in [`infra/modules/rbac.bicep`](infra/modules/rbac.bicep)).
 
@@ -53,18 +60,22 @@ azd auth login
 az login
 az account set --subscription {}
 
-# 2. Provision all Azure resources
+# 2. Provision all Azure resources (App Insights is auto-linked to the Foundry
+#    project as a Bicep `AppInsights` connection — no manual portal step).
 azd env new copilot-otel-demo
 azd env set AZURE_SUBSCRIPTION_ID {}
 azd env set AZURE_LOCATION eastus2
+# Optional: pick a different region for Azure AI Search if westus3 has no Basic capacity.
+# azd env set SEARCH_LOCATION centralus
 azd up
 
 # 3. Export environment for the Python app and seed the search index
 azd env get-values > .env
 python -m venv .venv && . .venv/Scripts/Activate.ps1  # Linux/macOS: . .venv/bin/activate
-# The Copilot SDK for Python is not yet on PyPI — pip installs it from GitHub.
-# Requires the Copilot CLI to already be installed on your PATH; see
-# https://github.com/github/copilot-sdk for instructions.
+# The Copilot SDK for Python is not yet on PyPI — pip installs the
+# `github-copilot-sdk` package from the project's git repo.
+# Requires the Copilot CLI to already be installed on PATH and signed in;
+# the SDK shells out to it. See https://github.com/github/copilot-sdk.
 pip install -r app/requirements.txt
 python app/seed_index.py
 

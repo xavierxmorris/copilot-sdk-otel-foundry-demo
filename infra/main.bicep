@@ -39,6 +39,9 @@ param embeddingModelVersion string = '1'
 param embeddingDeploymentName string = 'text-embedding-3-small'
 param embeddingDeploymentCapacity int = 30
 
+@description('Region for the Azure AI Search service. Defaulted to westus3 because Basic SKU capacity is currently exhausted in eastus2 and the eastus public data-plane endpoint is unreachable from some corporate VPN egress paths.')
+param searchLocation string = 'westus3'
+
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, environmentName)
 var tags = {
   'azd-env-name': environmentName
@@ -64,6 +67,7 @@ module foundry 'modules/foundry.bicep' = {
     resourceToken: resourceToken
     tags: tags
     applicationInsightsId: monitoring.outputs.applicationInsightsId
+    applicationInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
   }
 }
 
@@ -89,7 +93,7 @@ module openai 'modules/openai.bicep' = {
 module search 'modules/search.bicep' = {
   name: 'search'
   params: {
-    location: location
+    location: searchLocation
     resourceToken: resourceToken
     tags: tags
   }

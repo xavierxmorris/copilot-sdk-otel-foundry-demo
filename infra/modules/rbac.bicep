@@ -9,9 +9,11 @@ param foundryAccountName string
 
 // Role definition IDs (well-known GUIDs).
 var roles = {
-  // Search Index Data Reader
+  // Search Index Data Reader (read documents from indexes)
   searchIndexDataReader: '1407120a-92aa-4202-b7e9-c0e197c71c8f'
-  // Search Service Contributor (needed to create/update indexes from seed_index.py)
+  // Search Index Data Contributor (read/write documents — needed by seed_index.py upload_documents)
+  searchIndexDataContributor: '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
+  // Search Service Contributor (create/update indexes from seed_index.py)
   searchServiceContributor: '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
   // Cognitive Services OpenAI User
   cognitiveServicesOpenAiUser: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
@@ -48,6 +50,16 @@ resource raSearchContributor 'Microsoft.Authorization/roleAssignments@2022-04-01
     principalId: principalId
     principalType: 'User'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.searchServiceContributor)
+  }
+}
+
+resource raSearchDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(searchService.id, principalId, roles.searchIndexDataContributor)
+  scope: searchService
+  properties: {
+    principalId: principalId
+    principalType: 'User'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.searchIndexDataContributor)
   }
 }
 
