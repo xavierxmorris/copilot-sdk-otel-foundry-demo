@@ -22,19 +22,17 @@ az account set --subscription 51eb709f-8958-49c4-a547-ebdbd4bf66dc
 
 azd env new copilot-otel-demo
 azd env set AZURE_LOCATION eastus2
-azd up                              # ~10–15 min the first time
+# Optional override: azd env set SEARCH_LOCATION centralus
+azd up                              # ~12–15 min the first time
 azd env get-values > .env
 pip install -r app/requirements.txt
 python app/seed_index.py            # uploads the 5 Northwind docs to Search
-
-# Manual post-deploy step (until the App Insights connection is in Bicep):
-# In the Foundry portal, open the project -> Tracing -> "Connect Application Insights"
-# and select the appi-... resource in the same resource group.
 ```
 
 > Talking point: everything in `infra/` is one `azd up`. Foundry, App Insights,
-> AOAI, Search, RBAC. Linking App Insights to the Foundry project is what makes
-> the Tracing tab populate in step 4.
+> AOAI, Search, RBAC. The Bicep also wires up the **AppInsights connection**
+> on the Foundry project, so the Tracing tab lights up automatically — no
+> manual portal click.
 
 ## Step 1 — Start the OTel Collector
 

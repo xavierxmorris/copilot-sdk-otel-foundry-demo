@@ -13,6 +13,10 @@ param tags object
 @description('Resource ID of the Application Insights to link to the Foundry project.')
 param applicationInsightsId string
 
+@description('Connection string for the Application Insights resource (used as the connection credential).')
+@secure()
+param applicationInsightsConnectionString string
+
 var foundryAccountName = 'aif-${resourceToken}'
 var foundryProjectName = 'proj-copilot-otel-demo'
 
@@ -52,10 +56,27 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-0
 // Link the Application Insights resource to the Foundry project so the
 // Tracing tab and Evaluation-from-Traces pick it up automatically.
 //
-// TODO(coding-session): confirm the exact child-resource type for the
-// App Insights connection (may be `accounts/projects/connections` with
-// category=ApplicationInsights, or a dedicated `applicationInsights`
-// property on the project). Validate against the live API at deploy time.
+// The Foundry "AppInsights" project connection uses category=AppInsights with
+// the App Insights connection string as the credential and the resource ID in
+// metadata. This matches the connection that the Foundry portal creates when
+// you click "Connect Application Insights" in the Tracing tab.
+resource appInsightsConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview' = {
+  parent: foundryProject
+  name: 'appinsights-connection'
+  properties: {
+    category: 'AppInsights'
+    target: applicationInsightsId
+    authType: 'ApiKey'
+    isSharedToAll: true
+    credentials: {
+      key: applicationInsightsConnectionString
+    }
+    metadata: {
+      ApiType: 'Azure'
+      ResourceId: applicationInsightsId
+    }
+  }
+}
 
 output foundryAccountName string = foundryAccount.name
 output foundryProjectName string = foundryProject.name

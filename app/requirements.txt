@@ -1,8 +1,9 @@
 # GitHub Copilot SDK for Python (public preview, not yet on PyPI).
+# Package name is `github-copilot-sdk` per the project's pyproject.toml.
 # The `[telemetry]` extra installs opentelemetry-api which the SDK uses
 # for trace-context propagation between the CLI subprocess and your code.
 # See https://github.com/github/copilot-sdk/tree/main/python
-copilot-sdk[telemetry] @ git+https://github.com/github/copilot-sdk.git#subdirectory=python
+github-copilot-sdk[telemetry] @ git+https://github.com/github/copilot-sdk.git#subdirectory=python
 
 # Pydantic models for the @define_tool decorator's JSON schema generation.
 pydantic>=2.7.0

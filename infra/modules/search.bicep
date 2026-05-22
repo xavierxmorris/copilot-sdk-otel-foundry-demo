@@ -1,5 +1,6 @@
 // search.bicep — Azure AI Search (Basic SKU) for the RAG retrieval store.
 
+@description('Region for the Search service. Defaults to the resource group location, but can be overridden if Basic capacity is exhausted in the primary region.')
 param location string
 param resourceToken string
 param tags object

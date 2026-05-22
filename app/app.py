@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import uuid
 from pathlib import Path
 
@@ -46,7 +47,13 @@ from copilot.session import PermissionHandler
 
 SOURCE_NAME = "rag-demo-agent"
 TOP_K = 3
-MODEL = "gpt-5"  # Use the Copilot-hosted model; swap to "gpt-4o" etc. if preferred.
+MODEL = "gpt-5.2"  # Copilot-hosted GPT-5.2; swap to "claude-sonnet-4.6", "gpt-5-mini", etc. as desired.
+
+# The Python SDK looks for a bundled CLI binary inside the wheel; the
+# github-copilot-sdk wheel built from source has no bundled binary, so we
+# point at the user-installed Copilot CLI on PATH instead.
+def _find_cli_path() -> str | None:
+    return shutil.which("copilot")
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +148,13 @@ async def _run_one(client: CopilotClient, prompt: dict) -> None:
 
 async def run_demo() -> None:
     prompts = _load_prompts()
-    config = SubprocessConfig(telemetry=_telemetry_config())
+    cli_path = _find_cli_path()
+    if not cli_path:
+        raise SystemExit(
+            "Could not find the `copilot` CLI on PATH. Install the GitHub Copilot CLI "
+            "and ensure it is signed in, then re-run this script."
+        )
+    config = SubprocessConfig(cli_path=cli_path, telemetry=_telemetry_config())
     async with CopilotClient(config) as client:
         for prompt in prompts:
             await _run_one(client, prompt)

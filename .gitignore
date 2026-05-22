@@ -232,3 +232,7 @@ __marimo__/
 # Logs
 *.log
 
+
+# Bicep build artifact
+infra/main.json
+
