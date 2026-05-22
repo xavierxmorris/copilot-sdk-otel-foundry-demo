@@ -51,11 +51,11 @@ flowchart LR
 # 1. Sign in and pick the right subscription
 azd auth login
 az login
-az account set --subscription 51eb709f-8958-49c4-a547-ebdbd4bf66dc
+az account set --subscription {}
 
 # 2. Provision all Azure resources
 azd env new copilot-otel-demo
-azd env set AZURE_SUBSCRIPTION_ID 51eb709f-8958-49c4-a547-ebdbd4bf66dc
+azd env set AZURE_SUBSCRIPTION_ID {}
 azd env set AZURE_LOCATION eastus2
 azd up
 
